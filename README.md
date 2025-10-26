@@ -22,7 +22,7 @@ This can significantly reduce the size of exported data, especially when dataset
 | Integer, Option      | 4            | 1 to 4                  | Signed ZigZag Encoding : 1 bytes 0 and +/- 128, 2 bytes : +/- 16 684, … |
 | BigInteger, Duration | 8            | 2 to 8                  | Sign bit + Double ZigZag encoding :2 bytes : 0 and +/- 16 684,…            |
 | Decimal              | 12           | 3 to 9                 | On Scale Byte + Sign bit and Double ZigZag encoding.                       |
-| Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags + ZigZag encoding                           |
+| Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags + ZigZag encoding. Third byte never used (22'000+ years away)                           |
 | Time                 | 4            | 1 to 4                  | Undefined flags + Signed ZigZag encoding                                      |
 | DateTime             | 8            | 2 to 7                  | Combine above Date and Time encoding                                   |
 
