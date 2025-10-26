@@ -3,8 +3,8 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     /*
         Optimal binary encoding 
         
-        Offer function to write and read values with dynamic byte length encoding (similar as ZigZag)
-        Significantly reduce the number of byte needed to store data such as small and zero values.
+        Offer function to write and read values in stream with dynamic byte length encoding (similar as ZigZag)
+        Significantly reduce the number of byte needed to store numerical values
         You can expect length reduction of 20-40% when writting dataset with a lot of small or undefined values
     */
 
@@ -29,15 +29,15 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     begin
         ZeroByte := 0;
 
-        // Reading must function must be used with he same option as the datas were written
-        // If not, run time error will occur, or give completly wrong value
+        // Reading must be used with he same option as the datas were written
+        // If not, run time error will occur or give completly wrong value
 
         // The Base date strongly impact the number of bytes used for dates
-        // 2 bytes date cover +/- 89y from specified base date
+        // 2 bytes date cover +/- 89y from specified base date rather than 4 bytes
         // Its not recommanded to keep default AL base date (1.1.1753) because any date >1.1.1842 need 3 bytes
         ZigZagBaseDate := BaseDate;
 
-        // Applying ZigZag on time does not impact much byte reduction, only when it is undefined (one zero byte)
+        // Applying ZigZag on time does not reduce much the number of bytes
         // (3 bytes  cover 1h10 +/- from 12, and 2 bytes just few seconds)
         // Most of value will use the 4 bytes unless it is undefined (one zero byte)
         // Base time must mid day in order to use the sign bit
