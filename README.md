@@ -1,18 +1,20 @@
 
 # AL Optimal Binary Encoder
 
-Offer data reading and writing in binary format with smaller length than built in function, in pure AL.
+Offer data reading and writing in binary format with smaller length than built in AL stream function, in pure AL.
 
-Values are encoded using variable length similar as "ZigZag" algorithm with optimised behavous for undefined values and dates.
+Numerical values are encoded using variable length similar as "ZigZag" algorithm with optimised behavous for undefined values and dates.
 
-This can significantly reduce the size of exported data, especially when dataset have small, undefined and zero values, **you can expect 20-40% reduction**.
+This can reduce the size of exported data, especially when dataset have small, undefined and zero values, **you can expect 20-40% reduction**.
+
+You can use this along with built in AL read/write for other field type such as text.
 
 ## **Size comparaison**
 
 	// This write 4 full bytes in the stream, using built in AL encoding of Integer
 	OutStream.Write(Integer); 
 	
-	// This only write 1 byte if integer is 0 or +/- 128
+	// This only write 1 byte when integer is in 0 or +/- 128
 	// 2 bytes if +/- 16 684, ...
 	OptimalBinCodeunit.WriteInt(Integer); 
 	
@@ -30,7 +32,7 @@ This can significantly reduce the size of exported data, especially when dataset
 
 Why not other data type ? 
 
-GUID can not benefit from variable length due to the high entropy of the data.
+GUID can not benefit from variable length due to the high entropy of it value.
 
 Other datatype that are less present in the application such as DateFormula and RecordID, were not studied.
 
@@ -40,7 +42,7 @@ Other datatype that are less present in the application such as DateFormula and 
 
 The codeunit must be initialized before you start using it.
 
-If you set a custom base Date to optimise Date encoding, it bust me the same value for writting and reading or you get runtime error and incorrect read values.
+If you set a custom base date, it must be the same option for writting and reading or you could get runtime error and incorrect read values.
 
 	Initialize();
 	// or 
