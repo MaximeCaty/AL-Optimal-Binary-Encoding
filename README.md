@@ -2,7 +2,9 @@
 # AL Optimal Binary Encoder
 
 Offer data reading and writing in binary format with smaller length than built in function, in pure AL.
+
 Values are encoded using variable length similar as "ZigZag" algorithm with optimised behavous for undefined values and dates.
+
 This can significantly reduce the size of exported data, especially when dataset have small, undefined and zero values, **you can expect 20-40% reduction**.
 
 ## **Size comparaison**
@@ -25,12 +27,16 @@ This can significantly reduce the size of exported data, especially when dataset
 | DateTime             | 8            | 2 to 7                  | Combine above Date and Time encoding                                   |
 
 
+
 Why not other data type ? 
+
 GUID can not benefit from variable length due to the high entropy of the data.
 
 Other datatype that are less present in the application such as DateFormula and RecordID, were not studied.
 
+
 ## Usage
+
 
 The codeunit must be initialized before you start using it.
 
