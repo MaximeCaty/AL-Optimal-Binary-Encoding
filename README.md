@@ -30,11 +30,11 @@ You can use this along with built in AL read/write for other field type such as 
 | Boolean              | 4            | 1                       | None, AL is just dumb and add 3 useless byte after the boolean          |
 
 
-Why not other data type ? 
-
-GUID can not benefit from variable length due to the high entropy of it value.
-Text/Code : ASCII cna not be reduced bellow 1 byte, and Outstream.Write(Text) already use UTF-8 variable length encoding (1 byte for ascii char, 2-3 bytes for non ascii char such as emoji).
-Other : less present in the application (such as DateFormula and RecordID) were not studied.
+Why not other data type ? \
+\
+GUID : Due to the high entropy along the 16 bytes we can not save length using Zigzag here. We could split it into 4 integers but it would still have poor efficience. \
+Text/Code : ASCII can not be reduced bellow 1 byte, and Outstream.Write(Text) already use UTF-8 variable length encoding (1 byte for ascii char, 2-3 bytes for non ascii char such as emoji). \
+Other : less present in the application (such as DateFormula and RecordID) were not studied. \
 
 
 ## Usage
