@@ -3,52 +3,9 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     /*
         Optimal binary encoding 
         
-        Offer function to write and read values with dynamic length encoding (similar as ZigZag)
-        Significantly reduce the number of byte needed to store some value.
+        Offer function to write and read values with dynamic byte length encoding (similar as ZigZag)
+        Significantly reduce the number of byte needed to store data such as small and zero values.
         You can expect length reduction of 20-40% when writting dataset with a lot of small or undefined values
-
-        This code have been optimized with grok to be as fast as possible.
-
-(AL)  (Encoded)  (Data Type)
-    4   1-4     - Integer (also for : Option, Enum) 
-                ZigZag encoding
-                1 bytes 0 and +/- 128
-                2 bytes : +/- 16 684
-                3 bytes : +/- 4 194 304
-                ...
-    8   2-8     - BigInteger (also for : Duration)
-                Double Zigzag encoding
-                minimum is 2 bytes (limit regarding AL math operation range)
-                2 bytes : 0 and +/- 16 684
-                ...
-
-    12  3-9     - Decimal 
-                One scale byte and double zigzag encoding
-                the minimum length is 3 bytes
-                /!\ Precision loss : AL decimal is 12B while this support only 9b (BigInteger + a scale up to 18 decimal digits)
-                    If you need full precision on very large number or very small faction, don't use such function.
-                    precise enought for most usage (up to 19 digits)
-
-                3 bytes : 0 and +/- 16 684 with decimal position 0-18
-                4 bytes : 0 and +/- 4 194 304 with decimal position 0-18
-                ...
-
-    4   1-3     - Date :
-                Undefined and closed date flag + zigzag encoding
-                1 bytes : undefined date (and some days arround base date)
-                2 bytes : +/- 89 years arround base date
-                3 bytes : full supported range of date
-                4 bytes : never used
-
-    4   1-4     - Time :
-                Undefined flag and zigzag encoding
-                1 bytes : undefined time or 12:00
-                2 bytes : +/- 32s arround 12:00
-                3 bytes : +/- 1h10 arround 12:00
-                4 bytes : full supported range
-
-    8   2-7     - Datetime
-                combine date then time
     */
 
     // Global scope on thoses variable help the performance for intensive function calling
@@ -89,37 +46,37 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
 
 
     #region Date
-    procedure WriteZigZagDate(var OutStr: OutStream; Value: Date)
+    procedure WriteDate(var OutStr: OutStream; Value: Date)
     begin
         if Value = 0D then
             OutStr.Write(ZeroByte) // fast path empty date - no need to write the flag "closed"
         else begin
             // Closing date flag
             if Value = ClosingDate(Value) then begin
-                WriteZigZagInt(OutStr, -1);
+                WriteInt(OutStr, -1);
                 EvalInt := (NormalDate(Value) - ZigZagBaseDate);
             end else
                 EvalInt := (Value - ZigZagBaseDate);
 
             // Difference from start date (-/+ in days)
             if EvalInt >= 0 then
-                WriteZigZagInt(OutStr, EvalInt + 1) // transform 0 difference to 1, to keep 0 for undefined date
+                WriteInt(OutStr, EvalInt + 1) // transform 0 difference to 1, to keep 0 for undefined date
             else
-                WriteZigZagInt(OutStr, EvalInt - 1); // transform -1 et -2, to keep -1 for "Closing date" flag
+                WriteInt(OutStr, EvalInt - 1); // transform -1 et -2, to keep -1 for "Closing date" flag
         end;
     end;
 
-    procedure ReadZigZagDate(var InStr: InStream; var Value: Date)
+    procedure ReadDate(var InStr: InStream; var Value: Date)
     var
         ClosedDate: Boolean;
     begin
-        ReadZigZagInt(InStr, EvalInt);
+        ReadInt(InStr, EvalInt);
         // Empty date
         if EvalInt = 0 then exit;
 
         // "Closed date" flag, Date value is on next integer
         if EvalInt = -1 then begin
-            ReadZigZagInt(InStr, EvalInt);
+            ReadInt(InStr, EvalInt);
             ClosedDate := true;
         end;
 
@@ -134,20 +91,20 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #endregion
 
     #region Tim
-    procedure WriteZigZagTime(var OutStr: OutStream; Value: Time)
+    procedure WriteTime(var OutStr: OutStream; Value: Time)
     begin
         if Value = 0T then
             OutStr.Write(ZeroByte);
         EvalInt := Value - ZigZagBaseTime;
         if EvalInt >= 0 then
-            WriteZigZagInt(OutStr, EvalInt + 1) // keep the 0 for undefined time
+            WriteInt(OutStr, EvalInt + 1) // keep the 0 for undefined time
         else
-            WriteZigZagInt(OutStr, EvalInt);
+            WriteInt(OutStr, EvalInt);
     end;
 
-    procedure ReadZigZagTime(var InStr: InStream; var Value: Time)
+    procedure ReadTime(var InStr: InStream; var Value: Time)
     begin
-        ReadZigZagInt(InStr, EvalInt);
+        ReadInt(InStr, EvalInt);
         if EvalInt = 0 then
             exit;
         if EvalInt > 0 then
@@ -158,16 +115,16 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #endregion
 
     #region Datetime
-    procedure WriteZigZagDateTime(var OutStr: OutStream; Value: DateTime)
+    procedure WriteDateTime(var OutStr: OutStream; Value: DateTime)
     begin
-        WriteZigZagDate(OutStr, DT2Date(Value)); // date
-        WriteZigZagTime(OutStr, DT2Time(Value));  // time
+        WriteDate(OutStr, DT2Date(Value)); // date
+        WriteTime(OutStr, DT2Time(Value));  // time
     end;
 
-    procedure ReadZigZagDateTime(var InStr: InStream; var Value: DateTime)
+    procedure ReadDateTime(var InStr: InStream; var Value: DateTime)
     begin
-        ReadZigZagDate(InStr, EvalDate); // date
-        ReadZigZagTime(InStr, EvalTime); // time
+        ReadDate(InStr, EvalDate); // date
+        ReadTime(InStr, EvalTime); // time
         Value := CreateDateTime(EvalDate, EvalTime);
     end;
     #endregion
@@ -175,7 +132,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #region Integer
 
     // Write encoded Integer using ZigZag (use 1-4 bytes instead of fixed 4 bytes)
-    procedure WriteZigZagInt(var OutStr: OutStream; Value: Integer)
+    procedure WriteInt(var OutStr: OutStream; Value: Integer)
     var
         u: Decimal;   // unsigned zig-zag value (0 … 4 294 967 295)
         b: Byte;      // byte we write
@@ -204,7 +161,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     end;
 
     // Read encoded Integer using ZigZag (use 1-4 bytes instead of fixed 4 bytes)
-    procedure ReadZigZagInt(var InStr: InStream; var Value: Integer)
+    procedure ReadInt(var InStr: InStream; var Value: Integer)
     var
         u: Decimal;   // accumulated unsigned value
         mul: Decimal; // 128^shift
@@ -239,7 +196,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #endregion
 
     #region BigInteger
-    procedure WriteZigZagBigInt(var OutStr: OutStream; Value: BigInteger)
+    procedure WriteBigInt(var OutStr: OutStream; Value: BigInteger)
     var
         LowPart, HighPart : Integer;
     begin
@@ -254,16 +211,16 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         SplitBigIntegerToTwoInt32(Value, LowPart, HighPart); // Lower 31 bits // Upper 33 bits (signed)
 
         // Write Low then High as varint
-        WriteZigZagInt(OutStr, LowPart);
-        WriteZigZagInt(OutStr, HighPart);
+        WriteInt(OutStr, LowPart);
+        WriteInt(OutStr, HighPart);
     end;
 
-    procedure ReadZigZagBigInt(var InStr: InStream; var Value: BigInteger)
+    procedure ReadBigInt(var InStr: InStream; var Value: BigInteger)
     var
         LowPart, HighPart : Integer;
     begin
-        ReadZigZagInt(InStr, LowPart);
-        ReadZigZagInt(InStr, HighPart);
+        ReadInt(InStr, LowPart);
+        ReadInt(InStr, HighPart);
 
         // Reconstruct with LowPart as unsigned 32-bit
         if LowPart < 0 then
@@ -274,7 +231,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #endregion
 
     #region Decimal
-    procedure WriteZigZagDecimal(var OutStr: OutStream; Value: Decimal)
+    procedure WriteDecimal(var OutStr: OutStream; Value: Decimal)
     var
         ValStr: Text[100];
         MantBig: BigInteger;
@@ -306,16 +263,16 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             Evaluate(MantBig, ValStr);
 
         OutStr.Write(Scale); // scale as Byte (0-28)
-        WriteZigZagBigInt(OutStr, MantBig); // mantissa as signed BigInteger      
+        WriteBigInt(OutStr, MantBig); // mantissa as signed BigInteger      
     end;
 
-    procedure ReadZigZagDecimal(var InStr: InStream; var Value: Decimal)
+    procedure ReadDecimal(var InStr: InStream; var Value: Decimal)
     var
         MantBig: BigInteger;
         Scale: Byte;
     begin
         InStr.Read(Scale);
-        ReadZigZagBigInt(InStr, MantBig);
+        ReadBigInt(InStr, MantBig);
         if MantBig = 0 then begin
             Value := 0;
             exit;
