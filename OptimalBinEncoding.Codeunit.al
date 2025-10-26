@@ -44,6 +44,22 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         ZigZagBaseTime := 120000T;
     end;
 
+    procedure WriteBool(var OutStr: OutStream; Value: Boolean)
+    begin
+        if Value then
+            OutStr.Write(ZeroByte)
+        else
+            OutStr.Write(OneBye);
+    end;
+
+    procedure ReadBool(var InStr: InStream; var Value: Boolean)
+    begin
+        InStr.Read(EvalByte);
+        if EvalByte = 1 then
+            Value := true
+        else
+            Value := false;
+    end;
 
     #region Date
     procedure WriteDate(var OutStr: OutStream; Value: Date)
