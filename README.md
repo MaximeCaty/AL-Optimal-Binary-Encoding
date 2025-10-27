@@ -21,11 +21,11 @@ You can use this along with built in AL read/write for other field type such as 
 
 | AL Datatype          | AL Fixed Bytes | Variable Bytes length encoding | Encoding                                                      |
 | -------------------- | ------------ | ----------------------- | ---------------------------------------------------------------------- |
-| Integer, Option      | 4            | 1 to 4                  | Signed ZigZag Encoding : 1 bytes 0 and +/- 128, 2 bytes : +/- 16 684, … |
-| BigInteger, Duration | 8            | 2 to 8                  | Sign bit + Double ZigZag encoding :2 bytes : 0 and +/- 16 684,…         |
-| Decimal              | 12           | 3 to 9                  | On Scale Byte + Sign bit and Double ZigZag encoding.                    |
+| Integer, Option      | 4            | 1 to 4                  | ZigZag Encoding : 1 bytes 0 and +/- 128, 2 bytes : +/- 16 684, … |
+| BigInteger, Duration | 8            | 2 to 8                  | Double ZigZag encoding :2 bytes : 0 and +/- 16 684,…         |
+| Decimal              | 12           | 3 to 9                  | One Scale Byte + Double ZigZag encoding.                    |
 | Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags + ZigZag encoding. 4th byte never used (outside 9999 years range)                           |
-| Time                 | 4            | 1 to 4                  | Undefined flags + Signed ZigZag encoding                                |
+| Time                 | 4            | 1 to 4                  | Undefined flags + ZigZag encoding                                |
 | DateTime             | 8            | 2 to 7                  | Combine above Date and Time encoding                                    |
 | Boolean              | 4            | 1                       | None, AL is just dumb and add 3 useless byte after the boolean          |
 
