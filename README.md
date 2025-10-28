@@ -18,12 +18,12 @@ You can use this along with built in AL read/write for other field type such as 
 	
 	// This only write 2 byte because the value is in the +/- 16 384 range (1 full byte + 1 byte without continuation bit = 0)
 	OptimalBinCodeunit.WriteInt(OutStream, MyInteger); 
-	
 	...
-	
 	// Read back the 2 bytes integer using the same encoding.
-	// If you use the buit in "Instream.Read(MyInteger)" instead, it will throw a run-time error or give completly wrong value and screw the stream position
+	// If you use the built in "Instream.Read(MyInteger)" instead, it may throw run-time error or give wrong value and screw the stream position
 	OptimalBinCodeunit.ReadInt(InStream, MyInteger);
+	
+	Message(Format(MyInteger)); // this show "10000"
 
 	
 	
