@@ -171,11 +171,10 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             exit;
         end;
 
-        u := Value;
         if u >= 0 then
-            u := u * 2
+            u := Value * 2
         else
-            u := u * -2 - 1;
+            u := Value * -2 - 1;
 
         // ---- Encode loop (max 5 iterations) ----
         repeat
