@@ -11,18 +11,27 @@ You can use this along with built in AL read/write for other field type such as 
 
 ## **Size comparaison**
 
-	// This write 4 full bytes in the stream, using built in AL encoding of Integer
-	OutStream.Write(Integer); 
+	MyInteger := 10000;
 	
-	// This only write 1 byte when integer is in 0 or +/- 128
-	// 2 bytes if +/- 16 684, ...
-	OptimalBinCodeunit.WriteInt(Integer); 
+	// This write 4 full bytes in the stream, using built in AL encoding of Integer
+	// OutStream.Write(MyInteger); 
+	
+	// This only write 2 byte because the value is in the +/- 16 384 range (1 full byte + 1 byte without continuation bit = 0)
+	OptimalBinCodeunit.WriteInt(OutStream, MyInteger); 
+	
+	...
+	
+	// Read back the 2 bytes integer using the same encoding.
+	// If you use the buit in "Instream.Read(MyInteger)" instead, it will throw a run-time error or give completly wrong value and screw the stream position
+	OptimalBinCodeunit.ReadInt(InStream, MyInteger);
+
+	
 	
 
 | AL Datatype          | AL Fixed Bytes | Variable Bytes length encoding | Encoding                                                      |
 | -------------------- | ------------ | ----------------------- | ---------------------------------------------------------------------- |
-| Integer, Option      | 4            | 1 to 4                  | LEB128 + ZigZag Encoding : 1 bytes 0 and +/- 128, 2 bytes : +/- 16 684, … |
-| BigInteger, Duration | 8            | 1 to 8                  | LEB128 + ZigZag encoding :2 bytes : 0 and +/- 16 684,…         |
+| Integer, Option      | 4            | 1 to 4                  | LEB128 + ZigZag Encoding : 1 bytes = 0 and +/- 128, 2 bytes : +/- 16 684, … |
+| BigInteger, Duration | 8            | 1 to 8                  | LEB128 + ZigZag encoding : same logic as Integer         |
 | Decimal              | 12           | 2 to 9                  | One Scale Byte and LEB128 + ZigZag encoding. (support up to 19 digits/18 decimals)                    |
 | Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags then LEB128 + ZigZag encoding. 4th byte never used (outside 9999 years range)                           |
 | Time                 | 4            | 1 to 4                  | Undefined flags then LEB128 + ZigZag encoding                                |
