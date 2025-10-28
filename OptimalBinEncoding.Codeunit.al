@@ -11,6 +11,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     // Global scope on thoses variable help the performance for intensive function calling
     // it reduce the number of memory operation regarding allocations
     SingleInstance = true;
+
     var
         ZeroByte: Byte;
         OneBye: Byte;
@@ -179,7 +180,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         // ---- Encode loop (max 5 iterations) ----
         repeat
             b := u mod 128;                 // low 7 bits
-            u := u div 128; // integer division u := Round(u / 128, 1, '<');    // floor-divide (next chunk)
+            u := u div 128;                 // floor-divide (next chunk)
             if u > 0 then
                 b += 128;                   // set continuation bit
             OutStr.Write(b);
@@ -319,7 +320,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         end;
 
         // Write the mantissa with the max number of supported decimal for storage in AL (18, it go further only for calculation)
-        ValStr := Format(Value); //, 0, '<Sign><Integer><Decimals,28>');
+        ValStr := Format(Value);
 
         // Find decimal point position
         if ValStr.Contains('.') then begin
@@ -331,7 +332,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         end;
         Evaluate(MantBig, ValStr);
 
-        OutStr.Write(Scale); // scale as Byte (0-28)
+        OutStr.Write(Scale);          // scale as Byte (0-18)
         WriteBigInt(OutStr, MantBig); // mantissa as signed BigInteger      
     end;
 
