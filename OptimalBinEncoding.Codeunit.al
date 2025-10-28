@@ -10,14 +10,17 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
 
     // Global scope on thoses variable help the performance for intensive function calling
     // it reduce the number of memory operation regarding allocations
+    SingleInstance = true;
     var
         ZeroByte: Byte;
+        OneBye: Byte;
         ZigZagBaseDate: Date;
         ZigZagBaseTime: Time;
         Math: Codeunit Math;
         EvalInt: Integer;
         EvalDate: Date;
         EvalTime: Time;
+        EvalByte: Byte;
 
     procedure Initialize()
     begin
@@ -28,16 +31,17 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     var
     begin
         ZeroByte := 0;
+        OneBye := 1;
 
-        // Reading must be used with he same option as the datas were written
-        // If not, run time error will occur or give completly wrong value
+        // Reading must function must be used with he same option as the datas were written
+        // If not, run time error will occur, or give completly wrong value
 
         // The Base date strongly impact the number of bytes used for dates
-        // 2 bytes date cover +/- 89y from specified base date rather than 4 bytes
+        // 2 bytes date cover +/- 89y from specified base date
         // Its not recommanded to keep default AL base date (1.1.1753) because any date >1.1.1842 need 3 bytes
         ZigZagBaseDate := BaseDate;
 
-        // Applying ZigZag on time does not reduce much the number of bytes
+        // Applying ZigZag on time does not impact much byte reduction, only when it is undefined (one zero byte)
         // (3 bytes  cover 1h10 +/- from 12, and 2 bytes just few seconds)
         // Most of value will use the 4 bytes unless it is undefined (one zero byte)
         // Base time must mid day in order to use the sign bit
@@ -133,6 +137,11 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #region Datetime
     procedure WriteDateTime(var OutStr: OutStream; Value: DateTime)
     begin
+        if Value = 0DT then begin
+            OutStr.Write(ZeroByte); // empty date
+            OutStr.Write(ZeroByte); // empty time
+            exit;
+        end;
         WriteDate(OutStr, DT2Date(Value)); // date
         WriteTime(OutStr, DT2Time(Value));  // time
     end;
@@ -141,6 +150,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     begin
         ReadDate(InStr, EvalDate); // date
         ReadTime(InStr, EvalTime); // time
+        if (EvalDate = 0D) and (EvalTime = 0T) then exit;
         Value := CreateDateTime(EvalDate, EvalTime);
     end;
     #endregion
@@ -150,7 +160,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     // Write encoded Integer using ZigZag (use 1-4 bytes instead of fixed 4 bytes)
     procedure WriteInt(var OutStr: OutStream; Value: Integer)
     var
-        u: Decimal;   // unsigned zig-zag value (0 … 4 294 967 295)
+        u: BigInteger;   // unsigned zig-zag value (0 … 4 294 967 295)
         b: Byte;      // byte we write
     begin
         // ---- Zig-Zag (safe in Decimal) ----
@@ -179,7 +189,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     // Read encoded Integer using ZigZag (use 1-4 bytes instead of fixed 4 bytes)
     procedure ReadInt(var InStr: InStream; var Value: Integer)
     var
-        u: Decimal;   // accumulated unsigned value
+        u: BigInteger;   // accumulated unsigned value
         mul: Decimal; // 128^shift
         b: Byte;      // byte read from stream
     begin
@@ -214,42 +224,90 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #region BigInteger
     procedure WriteBigInt(var OutStr: OutStream; Value: BigInteger)
     var
-        LowPart, HighPart : Integer;
+        absValue: BigInteger;
+        low6: Integer;      // low 6 bits of abs(value)
+        remaining: BigInteger;   // high part after low6
+        b: Byte;
     begin
-        // Fast path: for 0 bytes
         if Value = 0 then begin
-            OutStr.Write(ZeroByte);
             OutStr.Write(ZeroByte);
             exit;
         end;
 
-        // Split BigInteger into Low and High 32-bit parts
-        SplitBigIntegerToTwoInt32(Value, LowPart, HighPart); // Lower 31 bits // Upper 33 bits (signed)
+        if Value < 0 then
+            absValue := -Value                 // safe after min-check
+        else
+            absValue := Value;
 
-        // Write Low then High as varint
-        WriteInt(OutStr, LowPart);
-        WriteInt(OutStr, HighPart);
+        // ----- low 6 bits → zigzag (fits in Integer) -----
+        low6 := (absValue mod 64) * 2;          // 0 … 126
+        if Value < 0 then
+            low6 -= 1;                          // 0 … 126 → -1 … 125
+        remaining := absValue div 64;           // high part
+        if low6 < 0 then begin                  // borrow from high part
+            low6 += 128;
+            remaining -= 1;
+        end;
+        b := low6;                              // first byte (7 data bits + cont)
+        if remaining > 0 then
+            b += 128;                           // set continuation bit
+        OutStr.Write(b);
+
+        // ----- remaining high part – standard LEB128 (8-bit final) -----
+        while remaining > 0 do begin
+            b := remaining mod 128;
+            remaining := remaining div 128;
+            if remaining > 0 then
+                b += 128;                       // continuation bit
+            OutStr.Write(b);
+        end;
     end;
 
     procedure ReadBigInt(var InStr: InStream; var Value: BigInteger)
     var
-        LowPart, HighPart : Integer;
+        low7: Integer;
+        remaining: BigInteger;
+        b: Byte;
+        sign: Byte;
+        multiplier: Decimal;
     begin
-        ReadInt(InStr, LowPart);
-        ReadInt(InStr, HighPart);
+        InStr.Read(b);
 
-        // Reconstruct with LowPart as unsigned 32-bit
-        if LowPart < 0 then
-            Value := HighPart * 4294967296L + LowPart + 4294967296L
-        else
-            Value := HighPart * 4294967296L + LowPart;
+        if b = 0 then begin
+            Value := 0;
+            exit;
+        end;
+
+        // ----- Extract 7 data bits: b mod 128 -----
+        low7 := b mod 128;
+
+        // ----- Sign bit: low7 mod 2 -----
+        sign := low7 mod 2;
+
+        // ----- Low 6 bits of abs(value): (low7 + sign) div 2 -----
+        low7 := (low7 + sign) div 2;
+
+        // ----- Read continuation bytes (7 bits each) -----
+        multiplier := 1;
+        while b >= 128 do begin
+            InStr.Read(b);
+            remaining += (b mod 128) * multiplier;
+            multiplier *= 128;
+        end;
+
+        // ----- Reconstruct absolute value -----
+        Value := low7 + 64 * remaining;
+
+        // ----- Apply sign -----
+        if sign = 1 then
+            Value := -Value;
     end;
     #endregion
 
     #region Decimal
     procedure WriteDecimal(var OutStr: OutStream; Value: Decimal)
     var
-        ValStr: Text[100];
+        ValStr: Text[50];
         MantBig: BigInteger;
         Scale: Byte;
     begin
@@ -257,12 +315,11 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         if Value = 0 then begin
             OutStr.Write(Scale); // scale
             OutStr.Write(ZeroByte); // mantissa (BigInt)
-            OutStr.Write(ZeroByte);
             exit;
         end;
 
         // Write the mantissa with the max number of supported decimal for storage in AL (18, it go further only for calculation)
-        ValStr := Format(Value, 0, '<Sign><Integer><Decimals,28>');
+        ValStr := Format(Value); //, 0, '<Sign><Integer><Decimals,28>');
 
         // Find decimal point position
         if ValStr.Contains('.') then begin
@@ -270,13 +327,9 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             Scale := StrLen(ValStr) - StrPos(ValStr, '.');
             if Scale > 18 then
                 Error(StrSubstNo('Overflow of scale while encoding zigzag decimal, maximum supported value is 18, value scale : %1', Scale));
-            ValStr := ValStr.Replace('.', '').TrimStart('0');
-            if ValStr = '' then // there is factrionnal lower than 18 digits - cannot be proceed with format
-                MantBig := 0
-            else
-                Evaluate(MantBig, ValStr);
-        end else
-            Evaluate(MantBig, ValStr);
+            ValStr := ValStr.TrimStart('0').Replace('.', '');
+        end;
+        Evaluate(MantBig, ValStr);
 
         OutStr.Write(Scale); // scale as Byte (0-28)
         WriteBigInt(OutStr, MantBig); // mantissa as signed BigInteger      
@@ -295,38 +348,50 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         end;
 
         // Decimal conversion
-        if Scale > 0 then begin
+        case Scale of
+            0:
+                Value := MantBig;
             // Division is precise up to 18 digits (div by 1000000000000000000)
-            if Scale IN [0 .. 18] then
-                Value := MantBig / Math.Pow(10, Scale)
+            // Case save a power operation 
+            1:
+                Value := MantBig / 10;
+            2:
+                Value := MantBig / 100;
+            3:
+                Value := MantBig / 1000;
+            4:
+                Value := MantBig / 10000;
+            5:
+                Value := MantBig / 100000;
+            6:
+                Value := MantBig / 1000000;
+            7:
+                Value := MantBig / 10000000;
+            8:
+                Value := MantBig / 100000000;
+            9:
+                Value := MantBig / 1000000000;
+            10:
+                Value := MantBig / 10000000000L;
+            11:
+                Value := MantBig / 100000000000L;
+            12:
+                Value := MantBig / 1000000000000L;
+            13:
+                Value := MantBig / 10000000000000L;
+            14:
+                Value := MantBig / 100000000000000L;
+            15:
+                Value := MantBig / 1000000000000000L;
+            16:
+                Value := MantBig / 10000000000000000L;
+            17:
+                Value := MantBig / 100000000000000000L;
+            18:
+                Value := MantBig / 1000000000000000000L;
             else
                 Error(StrSubstNo('Corrupted or overflow of scale while decoding zigzag decimal, maximum supported value is 18, read scale : %1', Scale));
-        end else
-            Value := MantBig;
+        end;
     end;
     #endregion
-
-    local procedure SplitBigIntegerToTwoInt32(Value: BigInteger; var Low: Integer; var High: Integer)
-    var
-        LowBig: BigInteger;
-        HighBig: BigInteger;
-        temp: Decimal;
-    begin
-        LowBig := Value MOD 4294967296L;
-        HighBig := Value DIV 4294967296L;
-        if LowBig < 0 then begin
-            LowBig += 4294967296L;
-            HighBig -= 1;
-        end;
-        temp := LowBig;
-        if temp >= 2147483648.0 then
-            Low := temp - 4294967296.0
-        else
-            Low := temp;
-        temp := HighBig;
-        if temp >= 2147483648.0 then
-            High := temp - 4294967296.0
-        else
-            High := temp;
-    end;
 }
