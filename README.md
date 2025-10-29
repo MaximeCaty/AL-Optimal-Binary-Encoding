@@ -3,7 +3,8 @@
 
 Offer data reading and writing in binary format with smaller length than built in AL stream function, in pure AL.
 
-Numerical values are encoded using variable length similar as "ZigZag" algorithm with optimised behavous for undefined values and dates.
+Numerical values are encoded using "ZigZag" to transform signe dvalue into unsigned, then LEB128 to compress the byte length using continuation bit.
+Additionnaly an "undefined" and "closing" flag optimise the Dates behavious.
 
 This can reduce the size of exported data, especially when dataset have small, undefined and zero values, **you can expect 20-40% reduction**.
 
@@ -30,13 +31,13 @@ You can use this along with built in AL read/write for other field type such as 
 
 | AL Datatype          | AL Fixed Bytes | Variable Bytes length encoding | Encoding                                                      |
 | -------------------- | ------------ | ----------------------- | ---------------------------------------------------------------------- |
-| Integer, Option      | 4            | 1 to 4                  | LEB128 + ZigZag Encoding : 1 bytes = 0 and +/- 128, 2 bytes : +/- 16 684, … |
-| BigInteger, Duration | 8            | 1 to 8                  | LEB128 + ZigZag encoding : same logic as Integer         |
-| Decimal              | 12           | 2 to 9                  | One Scale Byte and LEB128 + ZigZag encoding. (support up to 19 digits/18 decimals)                    |
-| Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags then LEB128 + ZigZag encoding. 4th byte never used (outside 9999 years range)                           |
-| Time                 | 4            | 1 to 4                  | Undefined flags then LEB128 + ZigZag encoding                                |
+| Integer, Option      | 4            | 1 to 4                  | ZigZag + LEB128 : 1 bytes = 0 and +/- 128, 2 bytes = +/- 16 684, …     |
+| BigInteger, Duration | 8            | 1 to 8                  | ZigZag + LEB128 : same logic as Integer. Note tha thte code is heavier due to AL arithmetic limitation on large numbers.|
+| Decimal              | 12           | 2 to 9                  | One Scale Byte then ZigZag + LEB128 encoding. (support up to 19 digits/18 decimals) |
+| Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags then LEB128 + ZigZag encoding. 4th byte never used (outside 9999 years range)|
+| Time                 | 4            | 1 to 4                  | Undefined flags then ZigZag + LEB128 encoding                           |
 | DateTime             | 8            | 2 to 7                  | Combine above Date and Time encoding                                    |
-| Boolean              | 4            | 1                       | None, AL is just dumb and add 3 useless byte after the boolean          |
+| Boolean              | 4            | 1                       | None (AL write boolean as a 4 bytes integer for whatever reason)        |
 
 
 Why not other data type ? \
