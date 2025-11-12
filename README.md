@@ -1,14 +1,14 @@
 
 # AL Optimal Binary Encoder
 
-Offer data reading and writing in binary format with smaller length than built in AL stream function, in pure AL.
+Offer numerical data binary reading and writing, with smaller length than built-in AL stream function.
 
-Numerical values are encoded using "ZigZag" to transform signe dvalue into unsigned, then LEB128 to compress the byte length using continuation bit.
-Additionnaly an "undefined" and "closing" flag optimise the Dates behavious.
+Values are encoded using "ZigZag" to transform signed to unsigned values, then LEB128 to compress the byte length with a continuation bit.
+Additionnaly an "undefined" and "closing" flag optimise dates value behavious.
 
-This can reduce the size of exported data, especially when dataset have small, undefined and zero values, **you can expect 20-40% reduction**.
+This can reduce the size of exported data, especially when dataset have a lot of small or undefined (zero) values, **you can expect 20-40% reduction**.
 
-You can use this along with built in AL read/write for other field type such as text.
+Use this along with **built-in AL read/write for other field type such as text.**
 
 ## **Size comparaison**
 
