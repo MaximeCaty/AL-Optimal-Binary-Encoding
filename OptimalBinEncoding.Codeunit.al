@@ -3,13 +3,13 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     /*
         Optimal binary encoding 
         
-        Offer function to write and read values with dynamic length encoding (LEB128+ZigZag)
-        Significantly reduce the number of byte needed to store some value.
-        You can expect length reduction of 20-30% when writting dataset with a lot of small or undefined values
+        Offer function to write and read values with dynamic length encoding (Zigzag+LEB128)
+        Significantly reduce the number of byte needed to store numerical values.
+        You can expect length reduction of 20-40% when writting dataset with a lot of small or undefined values
     */
 
-    // Global scope on thoses variable help the performance for intensive function calling
-    // reduce the number of memory allocation operation
+    // Global scope on thoses variable help intensive call performance
+    // It reduce number of memory allocation operation
     SingleInstance = true;
 
     var
@@ -24,7 +24,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         EvalByte: Byte;
         Scale: Byte;
         ValStr: Text[50];
-        u: BigInteger;   // unsigned zig-zag value (0 … 4 294 967 295)
+        u: BigInteger; // unsigned zig-zag value (0 … 4 294 967 295)
         mul: Decimal; // 128^shift
         low7: Integer; // low 7 bits
         low6: Integer; // low 6 bits
@@ -43,12 +43,12 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         ZeroByte := 0;
         OneByte := 1;
 
-        // Reading must function must be used with he same option as the datas were written
-        // If not, run time error will occur, or give completly wrong value
+        // Reading functions must be used with same init options as the datas were written
+        // If not, run time error will occur or return completly off value
 
         // The Base date strongly impact the number of bytes used for dates
         // 2 bytes date cover +/- 89y from specified base date
-        // Its not recommanded to keep default AL base date (1.1.1753) because any date >1.1.1842 need 3 bytes
+        // Its not recommanded to keep default AL base date (1.1.1753) because any date >1.1.1842 already need 3 bytes
         ZigZagBaseDate := BaseDate;
 
         // Applying ZigZag on time does not impact much byte reduction, only when it is undefined (one zero byte)
