@@ -35,8 +35,7 @@ Use this along with **built-in AL read/write for other field type such as text.*
 | BigInteger, Duration | 8            | 1 to 8                  | ZigZag + LEB128 : same logic as Integer. Note tha thte code is heavier due to AL arithmetic limitation on large numbers.|
 | Decimal              | 12           | 2 to 9                  | One Scale Byte then ZigZag + LEB128 encoding. (support up to 19 digits/18 decimals) |
 | Date                 | 4            | 1 to 3                  | Undefined and "ClosingDate" flags then LEB128 + ZigZag encoding. 4th byte never used (outside 9999 years range)|
-| Time                 | 4            | 1 to 4                  | Undefined flags then ZigZag + LEB128 encoding                           |
-| DateTime             | 8            | 2 to 7                  | Combine above Date and Time encoding                                    |
+| DateTime             | 8            | 5 to 7                  | Combine above Date and AL Time encoding (no gain to zigzag Time with signifiant performance leak)  |
 | Boolean              | 4            | 1                       | None (AL write boolean as a 4 bytes integer for whatever reason)        |
 
 
