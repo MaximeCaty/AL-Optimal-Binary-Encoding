@@ -16,7 +16,6 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         ZeroByte: Byte;
         OneByte: Byte;
         ZigZagBaseDate: Date;
-        ZigZagBaseTime: Time;
         Math: Codeunit Math;
         EvalInt: Integer;
         EvalDate: Date;
@@ -29,6 +28,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         low7: Integer; // low 7 bits
         low6: Integer; // low 6 bits
         remaining: BigInteger;
+        remainingInt: Integer;
         sign: Byte;
         absValue: BigInteger;
 
@@ -48,22 +48,15 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
 
         // The Base date strongly impact the number of bytes used for dates
         // 2 bytes date cover +/- 89y from specified base date
-        // Its not recommanded to keep default AL base date (1.1.1753) because any date >1.1.1842 need 3 bytes
         ZigZagBaseDate := BaseDate;
-
-        // Applying ZigZag on time does not impact much byte reduction, only when it is undefined (one zero byte)
-        // (3 bytes  cover 1h10 +/- from 12, and 2 bytes just few seconds)
-        // Most of value will use the 4 bytes unless it is undefined (one zero byte)
-        // Base time must mid day in order to use the sign bit
-        ZigZagBaseTime := 120000T;
     end;
 
     procedure WriteBool(var OutStr: OutStream; Value: Boolean)
     begin
         if Value then
-            OutStr.Write(ZeroByte)
+            OutStr.Write(OneByte)
         else
-            OutStr.Write(OneByte);
+            OutStr.Write(ZeroByte);
     end;
 
     procedure ReadBool(var InStr: InStream; var Value: Boolean)
@@ -82,66 +75,39 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             OutStr.Write(ZeroByte) // fast path empty date - no need to write the flag "closed"
         else begin
             // Closing date flag
-            if Value = ClosingDate(Value) then begin
-                WriteInt(OutStr, -1);
-                EvalInt := (NormalDate(Value) - ZigZagBaseDate);
-            end else
-                EvalInt := (Value - ZigZagBaseDate);
+            EvalInt := (NormalDate(Value) - ZigZagBaseDate);
 
             // Difference from start date (-/+ in days)
             if EvalInt >= 0 then
-                WriteInt(OutStr, EvalInt + 1) // transform 0 difference to 1, to keep 0 for undefined date
+                WriteInt(OutStr, EvalInt + 1) // keep 0 value for undefined date
             else
-                WriteInt(OutStr, EvalInt - 1); // transform -1 et -2, to keep -1 for "Closing date" flag
+                WriteInt(OutStr, EvalInt);
         end;
     end;
 
     procedure ReadDate(var InStr: InStream; var Value: Date)
-    var
-        ClosedDate: Boolean;
     begin
         ReadInt(InStr, EvalInt);
         // Empty date
         if EvalInt = 0 then exit;
 
-        // "Closed date" flag, Date value is on next integer
-        if EvalInt = -1 then begin
-            ReadInt(InStr, EvalInt);
-            ClosedDate := true;
-        end;
-
         // Calc difference from base date
         if EvalInt > 0 then
             Value := ZigZagBaseDate + EvalInt - 1 // 1 is base date
         else
-            Value := ZigZagBaseDate + EvalInt + 1; // -1 is closing flag
-        if ClosedDate then
-            Value := ClosingDate(Value);
+            Value := ZigZagBaseDate + EvalInt; // -1 is closing flag
     end;
     #endregion
 
     #region Tim
     procedure WriteTime(var OutStr: OutStream; Value: Time)
     begin
-        if Value = 0T then
-            OutStr.Write(ZeroByte)
-        else
-            EvalInt := Value - ZigZagBaseTime;
-        if EvalInt >= 0 then
-            WriteInt(OutStr, EvalInt + 1) // keep the 0 for undefined time
-        else
-            WriteInt(OutStr, EvalInt);
+        OutStr.Write(Value)
     end;
 
     procedure ReadTime(var InStr: InStream; var Value: Time)
     begin
-        ReadInt(InStr, EvalInt);
-        if EvalInt = 0 then
-            exit;
-        if EvalInt > 0 then
-            Value := ZigZagBaseTime + EvalInt - 1
-        else
-            Value := ZigZagBaseTime + EvalInt;
+        InStr.Read(Value)
     end;
     #endregion
 
@@ -154,13 +120,13 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             exit;
         end;
         WriteDate(OutStr, DT2Date(Value)); // date
-        WriteTime(OutStr, DT2Time(Value));  // time
+        OutStr.Write(DT2Time(Value)); // time
     end;
 
     procedure ReadDateTime(var InStr: InStream; var Value: DateTime)
     begin
         ReadDate(InStr, EvalDate); // date
-        ReadTime(InStr, EvalTime); // time
+        InStr.Read(EvalTime); // time
         if (EvalDate = 0D) and (EvalTime = 0T) then exit;
         Value := CreateDateTime(EvalDate, EvalTime);
     end;
@@ -174,6 +140,16 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         // fast path for one Zero byte
         if Value = 0 then begin
             OutStr.Write(ZeroByte);
+            exit;
+        end;
+
+        // ---- Fast path : 1 byte (-63..63 → ZigZag 0..126) ----
+        if (Value >= -63) and (Value <= 63) then begin
+            if Value > 0 then
+                EvalByte := Value * 2
+            else
+                EvalByte := Value * -2 - 1;
+            OutStr.Write(EvalByte);
             exit;
         end;
 
@@ -249,22 +225,37 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             low6 += 128;
             remaining -= 1;
         end;
-        EvalByte := low6;                              // first byte (7 data bits + cont)
+        EvalByte := low6;                        // first byte (7 data bits + cont)
         if remaining > 0 then
-            EvalByte += 128;                           // set continuation bit
+            EvalByte += 128;                     // set continuation bit
         OutStr.Write(EvalByte);
 
         // ----- remaining high part – standard LEB128 (8-bit final) -----
-        while remaining > 0 do begin
-            EvalByte := remaining mod 128;
-            remaining := remaining div 128;
-            if remaining > 0 then
-                EvalByte += 128;                       // continuation bit
-            OutStr.Write(EvalByte);
-        end;
+        // --- Fast path if remaining fit in Integer
+        if remaining <= 2147483647 then begin
+            remainingInt := remaining;
+            // LEB128 sur Integer pur — beaucoup plus rapide
+            while remainingInt > 0 do begin
+                EvalByte := remainingInt mod 128;
+                remainingInt := remainingInt div 128;
+                if remainingInt > 0 then
+                    EvalByte += 128;
+                OutStr.Write(EvalByte);
+            end;
+        end else
+            while remaining > 0 do begin
+                EvalByte := remaining mod 128;
+                remaining := remaining div 128;
+                if remaining > 0 then
+                    EvalByte += 128;                    // continuation bit
+                OutStr.Write(EvalByte);
+            end;
     end;
 
     procedure ReadBigInt(var InStr: InStream; var Value: BigInteger)
+    var
+        mulInt: Integer;
+        hasMore: Boolean;
     begin
         InStr.Read(EvalByte);
 
@@ -273,77 +264,88 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             exit;
         end;
 
-        // ----- Extract 7 data bits: b mod 128 -----
+        // ----- Premier byte : extraire sign + low6 -----
         low7 := EvalByte mod 128;
-
-        // ----- Sign bit: low7 mod 2 -----
         sign := low7 mod 2;
+        low7 := (low7 + sign) div 2;  // low 6 bits de abs(value)
 
-        // ----- Low 6 bits of abs(value): (low7 + sign) div 2 -----
-        low7 := (low7 + sign) div 2;
-
-        // ----- Read continuation bytes (7 bits each) -----
-        mul := 1;
-        remaining := 0;
-        while EvalByte >= 128 do begin
-            InStr.Read(EvalByte);
-            remaining += (EvalByte mod 128) * mul;
-            mul *= 128;
+        // ----- Pas de continuation : valeur tient en 1 byte -----
+        if EvalByte < 128 then begin
+            Value := low7;
+            if sign = 1 then Value := -Value;
+            exit;
         end;
 
-        // ----- Reconstruct absolute value -----
-        Value := low7 + 64 * remaining;
+        // ----- Fast path : remaining as Integer -----
+        // remaining max Integer = 2 147 483 647
+        // → cover up low7 + 64 * 2 147 483 647 ≈ 137 b
+        remainingInt := 0;
+        mulInt := 1;
+        hasMore := true;
 
-        // ----- Apply sign -----
-        if sign = 1 then
-            Value := -Value;
+        while hasMore do begin
+            InStr.Read(EvalByte);
+            remainingInt += (EvalByte mod 128) * mulInt;
+            mulInt *= 128;
+            hasMore := EvalByte >= 128;
+
+            // Overflow incoming : switch to BigInt
+            // 3 continuation bits is : mulInt > 16 777 216 (= 128^3)
+            if hasMore and (mulInt > 16777216) then begin
+                remaining := remainingInt;
+                mul := mulInt;
+                while EvalByte >= 128 do begin
+                    InStr.Read(EvalByte);
+                    remaining += (EvalByte mod 128) * mul;
+                    mul *= 128;
+                end;
+                // ----- Build from BigInteger -----
+                Value := low7 + 64 * remaining;
+                if sign = 1 then Value := -Value;
+                exit;
+            end;
+        end;
+
+        // ----- Build from Integer -----
+        Value := low7 + 64L * remainingInt;
+        if sign = 1 then Value := -Value;
     end;
     #endregion
 
     #region Decimal
     procedure WriteDecimal(var OutStr: OutStream; Value: Decimal)
     begin
-        // Fast path: for 0 bytes
+        // Fast path for 0 bytes
         if Value = 0 then begin
             OutStr.Write(ZeroByte); // scale
             OutStr.Write(ZeroByte); // mantissa (BigInt)
             exit;
         end;
 
-        // Write the mantissa with the max number of supported decimal for storage in AL (18, it go further only for calculation)
-        if Math.Truncate(Value) = Value then begin
+        // Fast path when no decimals
+        if round(Value, 1) = Value then begin
             OutStr.Write(ZeroByte);
             u := Value;
-            if (u <= 2147483647) and (u >= -2147483647) then
-                WriteInt(OutStr, u)
-            else
-                WriteBigInt(OutStr, u); // mantissa as signed BigInteger      
+            WriteBigInt(OutStr, u); // mantissa as signed BigInteger      
             exit;
         end;
 
+        // Find mantissa & scale (EvalByte = scale)
         ValStr := Format(Value, 0, 9);
 
         // Find decimal point position
-        if ValStr.Contains('.') then begin
-            ValStr := ValStr.TrimEnd('0');
-            EvalByte := StrLen(ValStr) - StrPos(ValStr, '.');
-            //if Scale > 18 then
-            //    Error(StrSubstNo('Overflow of scale while encoding zigzag decimal, maximum supported value is 18, value scale : %1', Scale));
-            ValStr := ValStr.TrimStart('0').Replace('.', '');
-        end else
-            EvalByte := 0;
-        Evaluate(u, ValStr);
+        // Parse Scale
+        EvalByte := StrLen(ValStr) - ValStr.IndexOf('.');
+        // Parse Mantissa
+        Evaluate(u, DELCHR(ValStr, '=', '.'));
 
         OutStr.Write(EvalByte); // scale as Byte (0-18)
-        if (u <= 2147483647) and (u >= -2147483647) then
-            WriteInt(OutStr, u)
-        else
-            WriteBigInt(OutStr, u); // mantissa as signed BigInteger      
+        WriteBigInt(OutStr, u); // mantissa as signed BigInteger
     end;
 
     procedure ReadDecimal(var InStr: InStream; var Value: Decimal)
     begin
-        InStr.Read(Scale);
+        InStr.Read(Scale); // Read scale : division is precise up to 18 digits (div by 1000000000000000000)
         ReadBigInt(InStr, u);
         if u = 0 then begin
             Value := 0;
@@ -354,8 +356,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
         case Scale of
             0:
                 Value := u;
-            // Division is precise up to 18 digits (div by 1000000000000000000)
-            // Case save a power operation 
+            // Case save a power operation (10 power scale)
             1:
                 Value := u / 10;
             2:
@@ -399,7 +400,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
     #endregion
 
     #region Tests
-    local procedure TestBinEncoding()
+    procedure TestBinEncoding()
     var
         zigzag: Codeunit "TOO Optimal Bin. Encoding";
         tempblob: codeunit "Temp Blob";
@@ -530,7 +531,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
             if Random(2) = 1 then
                 OriginalDec[i] := IntegerPart
             else begin
-                Scale := 2 + Random(16); // 2..18 Scale, max supported AL scale is 18 (up to 28 in AL variable, but storing resulting in preicsion loss)
+                Scale := 1 + Random(4); // 2..18 Scale, max supported AL scale is 18 (up to 28 in AL variable, but storing resulting in preicsion loss)
                 OriginalDec[i] := IntegerPart / Power(10, Scale);
             end;
             if Random(2) = 1 then // negative
@@ -626,7 +627,7 @@ codeunit 51008 "TOO Optimal Bin. Encoding"
 
         tempblob.CreateInStream(instream);
 
-        // Read all Deci0mals
+        // Read all Decimals
         for i := 1 to 100000 do
             zigzag.ReadTime(instream, ReadTime[i]);
 
